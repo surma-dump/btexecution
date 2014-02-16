@@ -1,0 +1,8 @@
+{
+	"name": "btexecution",
+	"version": "0.0.1",
+	"author": "Alexander Surma",
+	"controllers": {
+		"/": "app.js"
+	}
+}
