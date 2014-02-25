@@ -28,13 +28,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("Could not connect to ArangoDB: %s", err)
 	}
-	var x Node
+	x := []Node{}
 	cur := conn.Database("bt").Query("FOR n IN nodes RETURN n").Execute()
-	for cur.More() {
-		err := cur.Next(&x)
-		if err != nil {
-			log.Fatalf("Getting item failed: %s", err)
-		}
-		log.Printf("%#v", x)
+	if err := All(cur, &x); err != nil {
+		log.Fatalf("Could not get nodes: %s", err)
 	}
+	log.Printf("%#v", x)
 }
