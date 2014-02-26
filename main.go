@@ -59,6 +59,13 @@ func main() {
 			http.Error(w, "", http.StatusMethodNotAllowed)
 			return
 		}
+		var doc interface{}
+		dec := json.NewDecoder(r.Body)
+		err := dec.Decode(&doc)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
 		nodeName := r.URL.Path[1:]
 		if len(nodeName) <= 0 {
@@ -73,8 +80,10 @@ func main() {
 		nodeList := traverseGraph(db, startNode)
 		tree := buildTree(nodeList)
 
+		results := ExecuteTree(tree, doc)
+
 		enc := json.NewEncoder(w)
-		enc.Encode(tree)
+		enc.Encode(results)
 	})
 
 	log.Printf("Starting webserver on %s...", options.Listen)
