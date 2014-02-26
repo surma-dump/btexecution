@@ -70,15 +70,17 @@ func (db *database) ApiRoot() string {
 type Query interface {
 	SetBatchSize(i int) Query
 	Execute() Cursor
+	BindVar(key string, val interface{}) Query
 	Marshal() string
 	Database() Database
 }
 
 type query struct {
-	QueryString string   `json:"query"`
-	BatchSize   int      `json:"batchSize,omitempty"`
-	Count       bool     `json:"count"`
-	db          Database `json:"-"`
+	QueryString string                 `json:"query"`
+	BatchSize   int                    `json:"batchSize,omitempty"`
+	Count       bool                   `json:"count"`
+	db          Database               `json:"-"`
+	BindVars    map[string]interface{} `json:"bindVars,omitempty"`
 }
 
 func (q *query) SetBatchSize(i int) Query {
@@ -99,6 +101,14 @@ func (q *query) Marshal() string {
 	enc := json.NewEncoder(buf)
 	enc.Encode(q)
 	return string(buf.Bytes())
+}
+
+func (q *query) BindVar(key string, val interface{}) Query {
+	if q.BindVars == nil {
+		q.BindVars = make(map[string]interface{})
+	}
+	q.BindVars[key] = val
+	return q
 }
 
 func (q *query) Database() Database {
