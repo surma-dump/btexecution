@@ -118,6 +118,7 @@ func (q *query) Database() Database {
 type Cursor interface {
 	More() bool
 	Next(v interface{}) error
+	Close()
 }
 
 type cursor struct {
@@ -150,27 +151,13 @@ func (c *cursor) Next(v interface{}) error {
 	return nil
 }
 
-func All(c Cursor, v interface{}) error {
-	slicePtr := reflect.ValueOf(v)
-	if slicePtr.Kind() != reflect.Ptr {
-		return fmt.Errorf("Expected pointer")
+func (c *cursor) Close() {
+	req, err := http.NewRequest("DELETE", c.Query.Database().ApiRoot()+"/cursor/"+c.Id, nil)
+	if err != nil {
+		panic(err)
 	}
-	if slicePtr.Type().Elem().Kind() != reflect.Slice {
-		return fmt.Errorf("Expected pointer to slice value")
-	}
-	elemType := slicePtr.Type().Elem().Elem()
-
-	slice := reflect.MakeSlice(slicePtr.Type().Elem(), 0, 5)
-	for c.More() {
-		v := reflect.New(elemType)
-		err := c.Next(v.Interface())
-		if err != nil {
-			return err
-		}
-		slice = reflect.Append(slice, v.Elem())
-	}
-	slicePtr.Elem().Set(slice)
-	return nil
+	resp, _ := http.DefaultClient.Do(req)
+	resp.Body.Close()
 }
 
 func (c *cursor) nextBatch() error {
@@ -215,4 +202,27 @@ func remarshal(v1 interface{}, v2 interface{}) error {
 		return err
 	}
 	return json.Unmarshal(b, v1)
+}
+
+func All(c Cursor, v interface{}) error {
+	slicePtr := reflect.ValueOf(v)
+	if slicePtr.Kind() != reflect.Ptr {
+		return fmt.Errorf("Expected pointer")
+	}
+	if slicePtr.Type().Elem().Kind() != reflect.Slice {
+		return fmt.Errorf("Expected pointer to slice value")
+	}
+	elemType := slicePtr.Type().Elem().Elem()
+
+	slice := reflect.MakeSlice(slicePtr.Type().Elem(), 0, 5)
+	for c.More() {
+		v := reflect.New(elemType)
+		err := c.Next(v.Interface())
+		if err != nil {
+			return err
+		}
+		slice = reflect.Append(slice, v.Elem())
+	}
+	slicePtr.Elem().Set(slice)
+	return nil
 }
