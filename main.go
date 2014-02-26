@@ -25,6 +25,8 @@ type Node struct {
 	Type    string   `json:"type"`
 	Content string   `json:"content"`
 	Tags    []string `json:"tags"`
+	// Not stored in database, populated at runtime
+	Children []*Node `json:"-"`
 }
 
 type Edge struct {
@@ -39,8 +41,8 @@ type Path struct {
 }
 
 type TraversalStep struct {
-	Path   Path `json:"path"`
-	Vertex Node `json:"vertex"`
+	Path   Path  `json:"path"`
+	Vertex *Node `json:"vertex"`
 }
 
 func main() {
@@ -68,10 +70,11 @@ func main() {
 			http.Error(w, err.Error(), http.StatusNotFound)
 		}
 
-		nodeList := traverseTree(db, startNode)
+		nodeList := traverseGraph(db, startNode)
+		tree := buildTree(nodeList)
 
 		enc := json.NewEncoder(w)
-		enc.Encode(nodeList)
+		enc.Encode(tree)
 	})
 
 	log.Printf("Starting webserver on %s...", options.Listen)
@@ -94,7 +97,7 @@ func findNodeByName(db Database, name string) (*Node, error) {
 	return &node, nil
 }
 
-func traverseTree(db Database, startNode *Node) []TraversalStep {
+func traverseGraph(db Database, startNode *Node) []TraversalStep {
 	qry := db.Query(`FOR p IN TRAVERSAL(nodes, edges, @startid, "outbound", {paths: true}) RETURN p`)
 	qry.BindVar("startid", startNode.Id)
 	cur := qry.Execute()
@@ -103,4 +106,21 @@ func traverseTree(db Database, startNode *Node) []TraversalStep {
 	var nodeList []TraversalStep
 	All(cur, &nodeList)
 	return nodeList
+}
+
+func buildTree(list []TraversalStep) *Node {
+	lookup := map[string]*Node{}
+	for i, step := range list {
+		lookup[step.Vertex.Id] = step.Vertex
+		if i == 0 {
+			continue
+		}
+		parentNodeId := step.Path.Edges[len(step.Path.Edges)-1].From
+		parentNode := lookup[parentNodeId]
+		if parentNode.Children == nil {
+			parentNode.Children = make([]*Node, 0)
+		}
+		parentNode.Children = append(parentNode.Children, step.Vertex)
+	}
+	return list[0].Vertex
 }
