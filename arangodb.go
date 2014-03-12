@@ -29,6 +29,18 @@ func NewConnection(s string) (Connection, error) {
 		return nil, fmt.Errorf("Only http(s) connections are supported")
 	}
 
+	req, err := http.NewRequest("GET", s+"/_api/database", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Cannot find an ArangoDB API at given endpoint")
+	}
+
 	return &connection{
 		Host: u.String(),
 	}, nil
@@ -126,7 +138,7 @@ type cursor struct {
 	Error   interface{}   `json:"error"`
 	Id      string        `json:"id"`
 	Code    int           `json:"code"`
-	Result  []interface{} `josn:"result"`
+	Result  []interface{} `json:"result"`
 
 	Count    int   `json:"count"`
 	Query    Query `json:"-"`
@@ -156,8 +168,9 @@ func (c *cursor) Close() {
 	if err != nil {
 		panic(err)
 	}
-	resp, _ := http.DefaultClient.Do(req)
-	resp.Body.Close()
+	if resp, err := http.DefaultClient.Do(req); err == nil {
+		resp.Body.Close()
+	}
 }
 
 func (c *cursor) nextBatch() error {

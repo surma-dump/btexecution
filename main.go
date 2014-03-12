@@ -75,6 +75,7 @@ func main() {
 		startNode, err := findNodeByName(db, nodeName)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
+			return
 		}
 
 		nodeList := traverseGraph(db, startNode)
@@ -97,12 +98,11 @@ func findNodeByName(db Database, name string) (*Node, error) {
 	qry.BindVar("name", "name:"+name)
 	cur := qry.Execute()
 	defer cur.Close()
-	if !cur.More() {
-		return nil, fmt.Errorf("No node with name label \"%s\"", name)
-	}
 
 	var node Node
-	cur.Next(&node)
+	if err := cur.Next(&node); err != nil {
+		return nil, fmt.Errorf("No node with name label \"%s\"", name)
+	}
 	return &node, nil
 }
 
