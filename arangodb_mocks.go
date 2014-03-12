@@ -1,8 +1,9 @@
 package main
 
 type CursorMock struct {
-	MoreFunc func() bool
-	NextFunc func(v interface{}) error
+	MoreFunc  func() bool
+	NextFunc  func(v interface{}) error
+	CloseFunc func()
 }
 
 func (c *CursorMock) More() bool {
@@ -17,4 +18,11 @@ func (c *CursorMock) Next(v interface{}) error {
 		return nil
 	}
 	return c.NextFunc(v)
+}
+
+func (c *CursorMock) Close() {
+	if c.CloseFunc == nil {
+		return
+	}
+	c.CloseFunc()
 }
