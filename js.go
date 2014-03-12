@@ -13,11 +13,13 @@ func NewJSEnv() JSEnv {
 }
 
 func GetJSEnv() JSEnv {
-	select {
-	case env := <-jsEnvPool:
-		return env
-	default:
-	}
+	// TODO: Pooling is not viable until we find a way
+	// to clean the context after usage.
+	// select {
+	// case env := <-jsEnvPool:
+	// 	return env
+	// default:
+	// }
 	return NewJSEnv()
 }
 
