@@ -54,6 +54,15 @@ func main() {
 	}
 	db := conn.Database("bt")
 
+	id, err := db.Insert("some", map[string]string{"a":"av"});
+	if err != nil {
+		log.Fatalf("Insert Error: %s", err)
+	}
+	if err := db.Update(id, map[string]string{"b":"bv"}); err != nil {
+		log.Fatalf("Update Errpor: %s", err)
+	}
+	return
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "", http.StatusMethodNotAllowed)

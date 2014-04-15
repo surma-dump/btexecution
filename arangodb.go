@@ -59,6 +59,8 @@ func (c *connection) String() string {
 
 type Database interface {
 	Query(s string) Query
+	Insert(collection string, doc interface{}) (string, error)
+	Update(id string, doc interface{}) error
 	ApiRoot() string
 }
 
@@ -73,6 +75,75 @@ func (db *database) Query(s string) Query {
 		BatchSize:   5,
 		db:          db,
 	}
+}
+
+func (db *database) Insert(collection string, doc interface{}) (string, error) {
+	type dbReturn struct {
+		ID string `json:"_id"`
+		IsError bool `json:"error"`
+		ErrorMessage string `json:"errorMessage"`
+		Code int `json:"code"`
+	}
+
+	url := db.ApiRoot()+"/document?collection="+collection
+	data, err := json.Marshal(doc)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+
+	var r dbReturn
+	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+		return "", err
+	}
+
+	if r.IsError {
+		return "", fmt.Errorf("%s", r.ErrorMessage)
+	}
+	return r.ID, nil
+}
+
+func (db *database) Update(id string, doc interface{}) error {
+	type dbReturn struct {
+		IsError bool `json:"error"`
+		ErrorMessage string `json:"errorMessage"`
+		Code int `json:"code"`
+	}
+
+	url := db.ApiRoot()+path.Join("/document", id)
+	data, err := json.Marshal(doc)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("PUT", url, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+
+	var r dbReturn
+	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+		return err
+	}
+
+	if r.IsError {
+		return fmt.Errorf("%s", r.ErrorMessage)
+	}
+	return nil
 }
 
 func (db *database) ApiRoot() string {
