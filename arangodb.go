@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"reflect"
 	"strings"
@@ -58,6 +59,7 @@ func (c *connection) String() string {
 }
 
 type Database interface {
+	Get(id string, doc interface{}) error
 	Query(s string) Query
 	Insert(collection string, doc interface{}) (string, error)
 	Update(id string, doc interface{}) error
@@ -67,6 +69,28 @@ type Database interface {
 type database struct {
 	Name string
 	c    Connection
+}
+
+func (db *database) Get(id string, doc interface{}) error {
+	url := db.ApiRoot() + path.Join("/document", id)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return os.ErrNotExist
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Could not get document: %s", err)
+	}
+
+	return json.NewDecoder(resp.Body).Decode(doc)
 }
 
 func (db *database) Query(s string) Query {
@@ -79,13 +103,13 @@ func (db *database) Query(s string) Query {
 
 func (db *database) Insert(collection string, doc interface{}) (string, error) {
 	type dbReturn struct {
-		ID string `json:"_id"`
-		IsError bool `json:"error"`
+		ID           string `json:"_id"`
+		IsError      bool   `json:"error"`
 		ErrorMessage string `json:"errorMessage"`
-		Code int `json:"code"`
+		Code         int    `json:"code"`
 	}
 
-	url := db.ApiRoot()+"/document?collection="+collection
+	url := db.ApiRoot() + "/document?collection=" + collection
 	data, err := json.Marshal(doc)
 	if err != nil {
 		return "", err
@@ -114,12 +138,13 @@ func (db *database) Insert(collection string, doc interface{}) (string, error) {
 
 func (db *database) Update(id string, doc interface{}) error {
 	type dbReturn struct {
-		IsError bool `json:"error"`
+		ID           string `json:"_id"`
+		IsError      bool   `json:"error"`
 		ErrorMessage string `json:"errorMessage"`
-		Code int `json:"code"`
+		Code         int    `json:"code"`
 	}
 
-	url := db.ApiRoot()+path.Join("/document", id)
+	url := db.ApiRoot() + path.Join("/document", id)
 	data, err := json.Marshal(doc)
 	if err != nil {
 		return err
@@ -214,6 +239,8 @@ type cursor struct {
 	Count    int   `json:"count"`
 	Query    Query `json:"-"`
 	Position int   `json:"-"`
+
+	ErrorMessage string `json:"errorMessage"`
 }
 
 func (c *cursor) More() bool {
@@ -274,6 +301,8 @@ func (c *cursor) nextBatch() error {
 	switch x := c.Error.(type) {
 	case string:
 		return fmt.Errorf(x)
+	case bool:
+		return fmt.Errorf(c.ErrorMessage)
 	default:
 		return fmt.Errorf("Some error occured: %#v", c)
 	}

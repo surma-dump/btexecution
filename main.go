@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/gorilla/mux"
+
 	"github.com/voxelbrain/goptions"
 )
 
@@ -21,7 +23,7 @@ var (
 )
 
 type Node struct {
-	Id      string   `json:"_id"`
+	Id      string   `json:"_id, omitempty"`
 	Type    string   `json:"type"`
 	Content string   `json:"content"`
 	Tags    []string `json:"tags"`
@@ -54,20 +56,58 @@ func main() {
 	}
 	db := conn.Database("bt")
 
-	id, err := db.Insert("some", map[string]string{"a":"av"});
-	if err != nil {
-		log.Fatalf("Insert Error: %s", err)
-	}
-	if err := db.Update(id, map[string]string{"b":"bv"}); err != nil {
-		log.Fatalf("Update Errpor: %s", err)
-	}
-	return
+	r := mux.NewRouter()
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" {
-			http.Error(w, "", http.StatusMethodNotAllowed)
+	r.PathPrefix("/nodes").Methods("GET").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		qryStr, binds := buildQuery("nodes", r.Form)
+
+		qry := db.Query(qryStr)
+		for k, v := range binds {
+			qry.BindVar(k, v)
+		}
+		cur := qry.Execute()
+		defer cur.Close()
+
+		nodes := []Node{}
+		if err := All(cur, &nodes); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(nodes)
+	})
+
+	r.PathPrefix("/nodes/{id:[0-9]+}").Methods("GET").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		var n Node
+		if err := db.Get("nodes/"+vars["id"], &n); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		}
+
+		json.NewEncoder(w).Encode(n)
+	})
+
+	r.PathPrefix("/nodes").Methods("POST").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var n Node
+		if err := json.NewDecoder(r.Body).Decode(&n); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		n.Id = ""
+		n.Children = nil
+		id, err := db.Insert("nodes", n)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Write([]byte(id))
+	})
+
+	r.PathPrefix("/").Methods("POST").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var doc interface{}
 		dec := json.NewDecoder(r.Body)
 		err := dec.Decode(&doc)
@@ -97,9 +137,29 @@ func main() {
 	})
 
 	log.Printf("Starting webserver on %s...", options.Listen)
-	if err := http.ListenAndServe(options.Listen, nil); err != nil {
+	if err := http.ListenAndServe(options.Listen, r); err != nil {
 		log.Fatalf("Could not start webserver: %s", err)
 	}
+}
+
+func buildQuery(collection string, v url.Values) (string, map[string]string) {
+	qryStr := "FOR n IN " + collection
+	tag := v["tag"]
+	if len(tag) > 0 {
+		qryStr += " FILTER "
+	}
+	sep := ""
+	for i := range tag {
+		qryStr += sep + fmt.Sprintf("@f%d IN n.tags", i)
+		sep = " && "
+	}
+	qryStr += " RETURN n"
+
+	binds := map[string]string{}
+	for i := range tag {
+		binds[fmt.Sprintf("f%d", i)] = tag[i]
+	}
+	return qryStr, binds
 }
 
 func findNodeByName(db Database, name string) (*Node, error) {
