@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 
 	"github.com/gorilla/mux"
 
@@ -20,6 +22,10 @@ var (
 	}{
 		Listen: "localhost:8080",
 	}
+)
+
+const (
+	DEFAULT_LIMIT = 100
 )
 
 type Node struct {
@@ -142,23 +148,62 @@ func main() {
 	}
 }
 
-func buildQuery(collection string, v url.Values) (string, map[string]string) {
-	qryStr := "FOR n IN " + collection
-	tag := v["tag"]
-	if len(tag) > 0 {
-		qryStr += " FILTER "
-	}
-	sep := ""
-	for i := range tag {
-		qryStr += sep + fmt.Sprintf("@f%d IN n.tags", i)
-		sep = " && "
-	}
-	qryStr += " RETURN n"
+func buildQuery(collection string, v url.Values) (string, map[string]interface{}) {
+	qryStr := "FOR x IN " + collection
+	binds := map[string]interface{}{}
 
-	binds := map[string]string{}
-	for i := range tag {
-		binds[fmt.Sprintf("f%d", i)] = tag[i]
+	for i, expr := range v["filter"] {
+		f := strings.SplitN(expr, ":", 2)
+		if len(f) < 2 {
+			continue
+		}
+		fieldVar := fmt.Sprintf("f%d", i)
+		valueVar := fmt.Sprintf("fv%d", i)
+		comp := "=="
+		if f[0] == "tags" {
+			comp = "IN"
+		}
+
+		qryStr += fmt.Sprintf(" FILTER @%s %s x.@%s", valueVar, comp, fieldVar)
+		binds[fieldVar] = f[0]
+		binds[valueVar] = f[1]
 	}
+
+	for i, expr := range v["exclude"] {
+		f := strings.SplitN(expr, ":", 2)
+		if len(f) < 2 {
+			continue
+		}
+		fieldVar := fmt.Sprintf("e%d", i)
+		valueVar := fmt.Sprintf("ev%d", i)
+		comp := "=="
+		if f[0] == "tags" {
+			comp = "IN"
+		}
+
+		qryStr += fmt.Sprintf(" FILTER !(@%s %s x.@%s)", valueVar, comp, fieldVar)
+		binds[fieldVar] = f[0]
+		binds[valueVar] = f[1]
+	}
+
+	binds["skip"] = 0
+	if skipStr := v.Get("skip"); skipStr != "" {
+		skip, err := strconv.ParseInt(skipStr, 10, 64)
+		if err == nil {
+			binds["skip"] = int(skip)
+		}
+	}
+	binds["limit"] = DEFAULT_LIMIT
+	if limitStr := v.Get("limit"); limitStr != "" {
+		limit, err := strconv.ParseInt(limitStr, 10, 64)
+		if err == nil {
+			binds["limit"] = int(limit)
+		}
+	}
+
+	qryStr += " LIMIT @skip, @limit RETURN x"
+
+	log.Printf("\"%s\" %#v", qryStr, binds)
 	return qryStr, binds
 }
 
